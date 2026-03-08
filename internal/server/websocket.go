@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 
+	"github.com/divyanshmehta355/charcha-backend/internal/cache"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
@@ -20,37 +23,6 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	Conn   *websocket.Conn
 	UserID string
-}
-
-func ServeWS(w http.ResponseWriter, r *http.Request) {
-
-	tokenString := r.URL.Query().Get("token")
-	if tokenString == "" {
-		http.Error(w, "Missing authentication token", http.StatusUnauthorized)
-		return
-	}
-
-	userID, err := validateToken(tokenString)
-	if err != nil {
-		log.Printf("Invalid token: %v", err)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("Failed to upgrade connection: %v", err)
-		return
-	}
-
-	client := &Client{
-		Conn:   ws,
-		UserID: userID,
-	}
-
-	log.Printf("User %s successfully connected via WebSocket!", client.UserID)
-
-	go client.readMessages()
 }
 
 func validateToken(tokenString string) (string, error) {
@@ -76,28 +48,58 @@ func validateToken(tokenString string) (string, error) {
 	return userID, nil
 }
 
-func (c *Client) readMessages() {
+func ServeWS(w http.ResponseWriter, r *http.Request) {
+	tokenString := r.URL.Query().Get("token")
+	if tokenString == "" {
+		http.Error(w, "Missing authentication token", http.StatusUnauthorized)
+		return
+	}
 
+	userID, err := validateToken(tokenString)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Failed to upgrade: %v", err)
+		return
+	}
+
+	client := &Client{
+		Conn:   ws,
+		UserID: userID,
+	}
+
+	GlobalHub.AddClient(client)
+
+	go client.readMessages()
+}
+
+func (c *Client) readMessages() {
 	defer func() {
-		log.Printf("User %s disconnected", c.UserID)
+
+		GlobalHub.RemoveClient(c.UserID)
 		c.Conn.Close()
 	}()
 
 	for {
-
-		messageType, payload, err := c.Conn.ReadMessage()
+		_, payload, err := c.Conn.ReadMessage()
 		if err != nil {
-			log.Printf("Error reading message from %s: %v", c.UserID, err)
 			break
-
 		}
 
-		log.Printf("Received message from %s: %s", c.UserID, string(payload))
+		messageData := map[string]string{
+			"sender_id": c.UserID,
+			"content":   string(payload),
+		}
 
-		err = c.Conn.WriteMessage(messageType, payload)
+		jsonPayload, _ := json.Marshal(messageData)
+
+		err = cache.Client.Publish(context.Background(), "charcha_global", jsonPayload).Err()
 		if err != nil {
-			log.Printf("Error writing message to %s: %v", c.UserID, err)
-			break
+			log.Printf("Error publishing to Redis: %v", err)
 		}
 	}
 }

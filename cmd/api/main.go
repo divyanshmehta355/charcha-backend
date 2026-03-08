@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 
-	// Replace this with your actual module path
 	"github.com/divyanshmehta355/charcha-backend/internal/cache"
 	"github.com/divyanshmehta355/charcha-backend/internal/database"
 	"github.com/divyanshmehta355/charcha-backend/internal/server"
@@ -37,6 +36,9 @@ func main() {
 
 	// WebSocket route for real-time chat
 	http.HandleFunc("/ws", server.ServeWS)
+
+	// Start a goroutine to listen for Redis messages and broadcast to WebSocket clients
+	go server.ListenToRedis()
 
 	// 4. Start the HTTP server
 	port := ":8080"
