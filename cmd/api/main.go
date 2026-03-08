@@ -40,6 +40,17 @@ func main() {
 	// Route to fetch chat history for a room
 	http.HandleFunc("/api/messages", server.GetRoomMessages)
 
+	// Routes for managing chat rooms
+	http.HandleFunc("/api/rooms", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			server.GetRooms(w, r)
+		} else if r.Method == http.MethodPost {
+			server.CreateRoom(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	// Start a goroutine to listen for Redis messages and broadcast to WebSocket clients
 	go server.ListenToRedis()
 
