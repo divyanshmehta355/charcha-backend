@@ -37,6 +37,9 @@ func main() {
 	// WebSocket route for real-time chat
 	http.HandleFunc("/ws", server.ServeWS)
 
+	// Route to fetch chat history for a room
+	http.HandleFunc("/api/messages", server.GetRoomMessages)
+
 	// Start a goroutine to listen for Redis messages and broadcast to WebSocket clients
 	go server.ListenToRedis()
 
