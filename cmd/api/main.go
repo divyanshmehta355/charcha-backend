@@ -35,6 +35,9 @@ func main() {
 	// Login route for user authentication
 	http.HandleFunc("/api/login", server.HandleLogin)
 
+	// WebSocket route for real-time chat
+	http.HandleFunc("/ws", server.ServeWS)
+
 	// 4. Start the HTTP server
 	port := ":8080"
 	fmt.Printf("Server is listening on http://localhost%s\n", port)
