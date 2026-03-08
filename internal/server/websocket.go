@@ -7,8 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/divyanshmehta355/charcha-backend/internal/cache"
+	"github.com/divyanshmehta355/charcha-backend/internal/database"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
@@ -23,6 +25,11 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	Conn   *websocket.Conn
 	UserID string
+}
+
+type IncomingMessage struct {
+	RoomID  string `json:"room_id"`
+	Content string `json:"content"`
 }
 
 func validateToken(tokenString string) (string, error) {
@@ -79,27 +86,56 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 
 func (c *Client) readMessages() {
 	defer func() {
-
 		GlobalHub.RemoveClient(c.UserID)
 		c.Conn.Close()
 	}()
 
 	for {
+
 		_, payload, err := c.Conn.ReadMessage()
 		if err != nil {
+			log.Printf("User %s disconnected or error: %v", c.UserID, err)
 			break
 		}
 
-		messageData := map[string]string{
-			"sender_id": c.UserID,
-			"content":   string(payload),
+		var incoming IncomingMessage
+		if err := json.Unmarshal(payload, &incoming); err != nil {
+			log.Printf("Invalid message format from %s: %v", c.UserID, err)
+			continue
+
 		}
 
-		jsonPayload, _ := json.Marshal(messageData)
+		query := `
+			INSERT INTO messages (room_id, sender_id, content) 
+			VALUES ($1, $2, $3) 
+			RETURNING id::text, created_at
+		`
 
-		err = cache.Client.Publish(context.Background(), "charcha_global", jsonPayload).Err()
+		var messageID string
+		var createdAt time.Time
+
+		err = database.DB.QueryRow(context.Background(), query, incoming.RoomID, c.UserID, incoming.Content).Scan(&messageID, &createdAt)
+		if err != nil {
+			log.Printf("Failed to save message to DB: %v", err)
+			continue
+		}
+
+		broadcastData := map[string]string{
+			"id":        messageID,
+			"room_id":   incoming.RoomID,
+			"sender_id": c.UserID,
+			"content":   incoming.Content,
+
+			"created_at": createdAt.Format(time.RFC3339),
+		}
+
+		jsonBroadcast, _ := json.Marshal(broadcastData)
+
+		err = cache.Client.Publish(context.Background(), "charcha_global", jsonBroadcast).Err()
 		if err != nil {
 			log.Printf("Error publishing to Redis: %v", err)
+		} else {
+			log.Printf("Message %s saved to DB and published to Redis!", messageID)
 		}
 	}
 }
