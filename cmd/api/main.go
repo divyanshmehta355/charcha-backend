@@ -8,6 +8,7 @@ import (
 	// Replace this with your actual module path
 	"github.com/divyanshmehta355/charcha-backend/internal/cache"
 	"github.com/divyanshmehta355/charcha-backend/internal/database"
+	"github.com/divyanshmehta355/charcha-backend/internal/server"
 )
 
 func main() {
@@ -27,6 +28,12 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Charcha API is running and connected to the cloud!"))
 	})
+
+	// Register route for user registration
+	http.HandleFunc("/api/register", server.HandleRegister)
+
+	// Login route for user authentication
+	http.HandleFunc("/api/login", server.HandleLogin)
 
 	// 4. Start the HTTP server
 	port := ":8080"
